@@ -73,7 +73,7 @@ for (i in seq_along(C25_list_data)) {
     dplyr::pull(ex_return)
   
   ex_return_squared[[i]] <-  data.frame(C25_list[[i]]) %>%
-    dplyr::mutate(div_ex_return = Decimal_return^2 * 1 / nrow(ftdotm_dates)) %>%
+    dplyr::mutate(div_ex_return = Decimal_return^2 * (1 / nrow(ftdotm_dates))) %>%
     na.omit() %>%
     dplyr::summarize(ex_return = sum(div_ex_return), na.rm = TRUE) %>%
     dplyr::pull(ex_return)
@@ -112,9 +112,9 @@ for (i in seq_along(C25_list_data)) {
   betas[i] <- cov(na.omit(C25_list[[i]][, 3]), monthly_market_return) / var(monthly_market_return)
 }
 
-# 4. Plotting the SML model
+# 4. Plotting the SML model (DE LIGGER PÅ LINJEN VED AT E(R) KOMMER FRA CAPM-FORMLEN)
 sml_data <- data.frame(betas = unlist(betas), expected_returns = unlist(ex_return))
-sml_data$expected_returns <- risk_free_rate + sml_data$betas * (market_pf_ex_return - risk_free_rate)
+# sml_data$expected_returns <- risk_free_rate + sml_data$betas * (market_pf_ex_return - risk_free_rate)
 
 colors <- factor(rainbow(25))
 names(colors) <- C25_names
@@ -132,7 +132,7 @@ ggplot(sml_data, aes(x = betas, y = expected_returns, color = unlist(C25_names),
 # Filling cov-matrix entries 
 for (i in seq_along(C25_list)) {
   for (j in seq_along(C25_list)) {
-      cov_matrix[i, j] <- 1/12 * sum(na.omit(C25_list[[i]])[, 3] * na.omit(C25_list[[j]])[, 3]) - ex_return[[i]]*ex_return[[j]]
+      cov_matrix[i, j] <- 1/nrow(ftdotm_dates) * sum(na.omit(C25_list[[i]])[, 3] * na.omit(C25_list[[j]])[, 3]) - ex_return[[i]]*ex_return[[j]]
 }
 }
 # Calculating MVP weights
