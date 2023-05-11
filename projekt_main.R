@@ -37,7 +37,6 @@ EF_matrix <- matrix(nrow = 11, ncol = 3)
 one_vector <- c(rep(1, 25))
 C25_list <- list()
 TP_monthly_return <- numeric(nrow(ftdotm_dates) - 1)
-C25_list_adjust <- list()
 betas <- list()
 
 for (i in seq_along(C25_list_data)) {
@@ -137,8 +136,7 @@ ggplot(EF_df, aes(x = sd, y = exreturn)) +
 for (i in seq_len(nrow(ftdotm_dates) - 1)) {
   total_sum <- 0
   for (j in seq_along(C25_list_data)) {
-    C25_list_adjust[[j]] <- na.omit(C25_list[[j]])
-    total_sum <- total_sum + (C25_list_adjust[[j]][i, 3] * TP_weights[j])
+    total_sum <- total_sum + (na.omit(C25_list[[j]])[i, 3] * TP_weights[j])
   }
   TP_monthly_return[i] <- total_sum
 }
@@ -163,6 +161,48 @@ ggplot(sml_data, aes(x = betas, y = expected_returns, color = unlist(C25_names),
   scale_shape_manual(values = rep(c(15, 16, 17, 18, 3), 5)) + # use different shapes for each asset
   guides(color = guide_legend(title = "Assets"), shape = guide_legend(title = "Assets"))
 
+### 4. Creating plotting normal distributions ########################################
+# 4.1 Plotting histogram of returns for AMBU
+# Extracting data for larger period
+C25_list_data_after <- get_data_after()
 
+# Creating monthly dates
+ftdotm_dates_after <- data.frame(Date = index(C25_list_data_after[[1]]), C25_list_data_after[[1]]) %>%
+  dplyr::select(Date) %>%
+  dplyr::group_by(year(Date), month(Date)) %>%
+  dplyr::filter(row_number() == 1) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(Date)
 
+# Calculating monthly returns
+C25_list_after <- list()
+
+for (i in seq_along(C25_list_data)) {
+  C25_list_after[[i]] <- data.frame(Date = index(C25_list_data_after[[i]]), C25_list_data_after[[i]]) %>%
+    dplyr::filter(Date %in% ftdotm_dates_after$Date) %>%
+    dplyr::select(Date, 5) %>%
+    dplyr::mutate(Decimal_return = (.[, 2] - lag(.[, 2]))/lag(.[, 2])) %>%
+    dplyr::mutate(Decimal_return_squared = Decimal_return^2)
+}
+
+ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
+  geom_histogram(aes(y = ..density..), fill = "lightblue", color = "black",) +
+  labs(x = "Expected Value", y = "Density", title = "Distribution of Values")
+
+hist (na.omit(C25_list_after[[1]])$Decimal_return, breaks =25, prob =TRUE , col = "orange", density = 60,
+              xlab ="Expected value ", ylim =c(0, 4) , main = "")
+
+# METODE 1
+# h <- hist(na.omit(C25_list_after[[1]])$Decimal_return, breaks=10, col="red", xlab="Expected Value", main="dette er en titel")
+# xfit <- seq(min(na.omit(C25_list_after[[1]])$Decimal_return), max(na.omit(C25_list_after[[1]])$Decimal_return, length=40))
+# yfit <- dnorm(xfit, mean=mean(na.omit(C25_list_after[[1]])$Decimal_return), sd=sd(na.omit(C25_list_after[[1]])$Decimal_return))
+# yfit <- yfit*diff(h$mids[1:2])*length(na.omit(C25_list_after[[1]])$Decimal_return)
+# lines(xfit, yfit, col="blue", lwd=2)
+
+# METODE 2
+# ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
+#   geom_histogram(bins = 20, fill = "orange", alpha = 0.8) +
+#   xlab("Expected Value") +
+#   ylab("Frequency") +
+  # ggtitle("Histogram of Expected Values")
 
