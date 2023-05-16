@@ -3,17 +3,9 @@ library(lubridate)
 library(dplyr)
 library(MASS)
 library(ggplot2)
+library(ggthemes)
 
 source("data_extract.R")
-
-# UPDATED PLAN
-# 1. Lav så datoerne automatisk assignes så første dag i måneden assignes for hver måned, for hele perioden. CHECK
-# 2. Udregn MVP's expected return og variance. CHECK
-# 3. Lav SML-linje.
-#   DU ER NÅET TIL AT UDREGNE BETA. DU HAR PORTFØLJENS MÅNEDLIGE RETURN.
-# 4. Lav CML-linje.
-# 5. Kig på Correlation Coefficient Matrix og se på applications med distributions.
-
 
 ### 0. EXTRACTING DATA ############################################################
 C25_list_data <- get_data()
@@ -36,13 +28,13 @@ cov_matrix <- matrix(nrow = 25, ncol = 25)
 EF_matrix <- matrix(nrow = 21, ncol = 3)
 one_vector <- c(rep(1, 25))
 C25_list <- list()
-market_monthly_return <- numeric(nrow(ftdotm_dates) - 1)
+TP_monthly_return <- numeric(nrow(ftdotm_dates) - 1)
 betas <- list()
 
 for (i in seq_along(C25_list_data)) {
   C25_list[[i]] <- data.frame(Date = index(C25_list_data[[i]]), C25_list_data[[i]]) %>%
     dplyr::filter(Date %in% ftdotm_dates$Date) %>%
-    dplyr::select(Date, 5) %>%
+    dplyr::select(Date, 7) %>%
     dplyr::mutate(Decimal_return = (.[, 2] - lag(.[, 2]))/lag(.[, 2])) %>%
     dplyr::mutate(Decimal_return_squared = Decimal_return^2)
 
@@ -120,80 +112,72 @@ EF_df <- as.data.frame(EF_matrix) %>%
 ggplot(EF_df, aes(x = sd, y = exreturn)) + 
   geom_point(size = 0.8) +
   geom_abline(slope = ((TP_ex_return - risk_free_rate) / TP_sd), intercept = risk_free_rate, color = "orange") +
-  xlim(0, max(EF_df$sd) + 0.001) +
-  ylim(0, max(EF_df$exreturn) + 0.01) +
+  xlim(0, max(EF_df$sd)) +
+  ylim(0, max(EF_df$exreturn)) +
   xlab("Standard Deviation") +
   ylab("Expected Return") +
-  annotate("text", x = EF_df$sd[which.min(EF_df$exreturn)], y = EF_df$exreturn[which.min(EF_df$exreturn)], label = "MVP", size = 2, color = "red", vjust = 1.6) +
+  annotate("text", x = EF_df[21, 3], y = EF_df[21, 2], label = "MVP", size = 2, color = "red", vjust = 1.6) +
   annotate("text", x = EF_df[11, 3], y = EF_df[11, 2], label = "TP", size = 2, color = "red", vjust = -1) +
   ggtitle("Capital Market Line")
 
 ### 4. Creating the SML #####################################################################
-# 4.1. We define our market_portfolio (Sparinvest Index)
-market_weights <- list(0.0091, 0.0071, 0.0271, 0.051, 0.0637, 
-                        0.0469, 0.0111, 0.1514, 0.0065, 0.085, 
-                        0.0097, 0.0217, 0.0289, 0.0106, 0.0105, 
-                        0.0113, 0.0059, 0.1662, 0.0355, 0.0622,
-                        0.0298, 0.0124, 0.0078, 0.0261, 0.1025) %>%
-  unlist()
-
-# 4.2. Now we need to find beta, which means that be have to find the monhthly return of the market-portfolio
+# 4.1 Calculating monthly porfolio return
 for (i in seq_len(nrow(ftdotm_dates) - 1)) {
   total_sum <- 0
   for (j in seq_along(C25_list_data)) {
-    total_sum <- total_sum + (na.omit(C25_list[[j]])[i, 3] * market_weights[j])
+    total_sum <- total_sum + (na.omit(C25_list[[j]])[i, 3] * TP_weights[j])
   }
-  market_monthly_return[i] <- total_sum
+  TP_monthly_return[i] <- total_sum
 }
-market_ex_return <- sum(mapply(`*`, market_weights, ex_return))
-market_var <- t(market_weights) %*% cov_matrix %*% market_weights %>%
-  `[`(1, 1) %>% 
-  as.numeric()
-market_sd <- sqrt(market_var)
-# 4.3. We now find beta values
+
+# 4.2. We now find beta values
 for (i in seq_along(C25_list)) {
-  betas[i] <- cov(na.omit(C25_list[[i]][, 3]), market_monthly_return) / var(market_monthly_return)
+  betas[i] <- cov(na.omit(C25_list[[i]][, 3]), TP_monthly_return) / var(TP_monthly_return)
 }
 
-# 4.4. Plotting the SML model (DE LIGGER PÅ LINJEN VED AT E[R] KOMMER FRA CAPM-FORMLEN)
+# Binding betas and exreturn in a dataframe
 sml_data <- data.frame(betas = unlist(betas), expected_returns = unlist(ex_return))
-# CAPM results show what expected value the stocks must have to following the market risk premium
-CAPM_result <- risk_free_rate + sml_data$betas * (market_ex_return - risk_free_rate)
 
+# CAPM/SML results show what expected value the stocks must have to following the market risk premium
+CAPM_result <- risk_free_rate + sml_data$betas * (TP_ex_return - risk_free_rate)
+
+# 4.3. Plotting the SML model
 colors <- factor(rainbow(25))
 names(colors) <- C25_names
 ggplot(sml_data, aes(x = betas, y = expected_returns, color = unlist(C25_names), shape = unlist(C25_names))) +
   geom_point() +
-  geom_abline(intercept = risk_free_rate, slope = market_ex_return - risk_free_rate) +
+  geom_abline(intercept = risk_free_rate, slope = TP_ex_return - risk_free_rate) +
   xlab("Beta") + ylab("Expected Return") +
   ggtitle("Security Market Line") +
   scale_color_manual(values = colors) + # use different colors for each asset
   scale_shape_manual(values = rep(c(15, 16, 17, 18, 3), 5)) + # use different shapes for each asset
-  guides(color = guide_legend(title = "Assets"), shape = guide_legend(title = "Assets"))
+  guides(color = guide_legend(title = "Assets"), shape = guide_legend(title = "Assets")) +
+  theme_tufte()
 
 ### 5. Creating plotting normal distributions ########################################
 # 5.1 Preprocessing of histogram
 # Extracting data for larger period
-C25_list_data_after <- get_data_after()
-
-# Creating monthly dates
-ftdotm_dates_after <- data.frame(Date = index(C25_list_data_after[[1]]), C25_list_data_after[[1]]) %>%
-  dplyr::select(Date) %>%
-  dplyr::group_by(year(Date), month(Date)) %>%
-  dplyr::filter(row_number() == 1) %>%
-  dplyr::ungroup() %>%
-  dplyr::select(Date)
+# C25_list_data_after <- get_data_after()
+# 
+# # Creating monthly dates
+# ftdotm_dates_after <- data.frame(Date = index(C25_list_data_after[[1]]), C25_list_data_after[[1]]) %>%
+#   dplyr::select(Date) %>%
+#   dplyr::group_by(year(Date), month(Date)) %>%
+#   dplyr::filter(row_number() == 1) %>%
+#   dplyr::ungroup() %>%
+#   dplyr::select(Date)
 
 # Calculating monthly returns
-C25_list_after <- list()
 
-for (i in seq_along(C25_list_data)) {
-  C25_list_after[[i]] <- data.frame(Date = index(C25_list_data_after[[i]]), C25_list_data_after[[i]]) %>%
-    dplyr::filter(Date %in% ftdotm_dates_after$Date) %>%
-    dplyr::select(Date, 5) %>%
-    dplyr::mutate(Decimal_return = (.[, 2] - lag(.[, 2]))/lag(.[, 2])) %>%
-    dplyr::mutate(Decimal_return_squared = Decimal_return^2)
-}
+# C25_list_after <- list()
+# 
+# for (i in seq_along(C25_list_data)) {
+#   C25_list_after[[i]] <- data.frame(Date = index(C25_list_data_after[[i]]), C25_list_data_after[[i]]) %>%
+#     dplyr::filter(Date %in% ftdotm_dates_after$Date) %>%
+#     dplyr::select(Date, 5) %>%
+#     dplyr::mutate(Decimal_return = (.[, 2] - lag(.[, 2]))/lag(.[, 2])) %>%
+#     dplyr::mutate(Decimal_return_squared = Decimal_return^2)
+# }
 
 # 5.2 Plotting histogram of returns for AMBU
 # METODE 1
@@ -219,7 +203,7 @@ for (i in seq_along(C25_list_data)) {
 
 
 
-write.csv(cbind(C25_list[[1]]$Date, round(C25_list[[1]][c("AMBU.B.CO.Close", "Decimal_return", "Decimal_return_squared")], 4)), "AMBU_start_data.csv", row.names = FALSE)
+write.csv(cbind(C25_list[[1]]$Date, round(C25_list[[1]][c("AMBU.B.CO.Adjusted", "Decimal_return", "Decimal_return_squared")], 4)), "AMBU_start_data.csv", row.names = FALSE)
 
 write.csv(cbind(C25_names, ex_return, var_list), "C25_exreturn_variance.csv", row.names = FALSE)
 
@@ -234,6 +218,13 @@ write.csv(cbind(EF_df$weigths, round(EF_df[c("exreturn", "sd")], 4)), "EF_df.csv
 write.csv(cbind(betas), "beta_values.csv", row.names = FALSE)
 
 
+
+# market_weights <- list(0.0091, 0.0071, 0.0271, 0.051, 0.0637, 
+#                        0.0469, 0.0111, 0.1514, 0.0065, 0.085, 
+#                        0.0097, 0.0217, 0.0289, 0.0106, 0.0105, 
+#                        0.0113, 0.0059, 0.1662, 0.0355, 0.0622,
+#                        0.0298, 0.0124, 0.0078, 0.0261, 0.1025) %>%
+#   unlist()
 
 
 
