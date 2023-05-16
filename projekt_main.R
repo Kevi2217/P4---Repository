@@ -33,10 +33,10 @@ ex_return <- list()
 ex_return_squared <- list()
 var_list <- list()
 cov_matrix <- matrix(nrow = 25, ncol = 25)
-EF_matrix <- matrix(nrow = 11, ncol = 3)
+EF_matrix <- matrix(nrow = 21, ncol = 3)
 one_vector <- c(rep(1, 25))
 C25_list <- list()
-TP_monthly_return <- numeric(nrow(ftdotm_dates) - 1)
+market_monthly_return <- numeric(nrow(ftdotm_dates) - 1)
 betas <- list()
 
 for (i in seq_along(C25_list_data)) {
@@ -47,13 +47,13 @@ for (i in seq_along(C25_list_data)) {
     dplyr::mutate(Decimal_return_squared = Decimal_return^2)
 
   ex_return[[i]] <- data.frame(C25_list[[i]]) %>%
-    dplyr::mutate(div_ex_return = Decimal_return * (1 / nrow(ftdotm_dates))) %>%
+    dplyr::mutate(div_ex_return = Decimal_return * (1 / (nrow(ftdotm_dates)))) %>%
     na.omit() %>%
     dplyr::summarize(ex_return = sum(div_ex_return), na.rm = TRUE) %>%
     dplyr::pull(ex_return)
   
   ex_return_squared[[i]] <-  data.frame(C25_list[[i]]) %>%
-    dplyr::mutate(div_ex_return = Decimal_return^2 * (1 / nrow(ftdotm_dates))) %>%
+    dplyr::mutate(div_ex_return = Decimal_return^2 * (1 / (nrow(ftdotm_dates)))) %>%
     na.omit() %>%
     dplyr::summarize(ex_return = sum(div_ex_return), na.rm = TRUE) %>%
     dplyr::pull(ex_return)
@@ -70,11 +70,8 @@ for (i in seq_along(C25_list)) {
   }
 }
 # Calculating MVP weights
-MVP_weights <- (ginv(cov_matrix) %*% one_vector) / diag(t(one_vector) %*% ginv(cov_matrix) %*% one_vector)
-MVP_weights[MVP_weights < 0.02] <- 0
-MVP_weights <- MVP_weights / sum(MVP_weights)
-MVP_weights <- as.list(MVP_weights[, 1]) %>%
-  unlist()
+MVP_weights <- as.numeric(ginv(one_vector %*% ginv(cov_matrix) %*% one_vector)) * as.vector(ginv(cov_matrix) %*% one_vector)
+
 
 # Calculating the expected return and variance of the MVP
 MVP_ex_return <- sum(mapply(`*`, MVP_weights, ex_return))
@@ -86,16 +83,13 @@ MVP_sd <- sqrt(MVP_var)
 
 ### 3. Creating the tangency portfolio and CML #####################################################################
 # We assume the risk free rate
-risk_free_rate <- 0.02
+risk_free_rate <- 0.01
 
-# Calculating the weights of the tangency portfolio (and removing shorting and especially small weights)
+# Calculating the weights of the tangency portfolio
 v_ex_return <- as.numeric(ex_return)
-TP_weights <- ginv(cov_matrix) %*% (v_ex_return - risk_free_rate) / sum(ginv(cov_matrix) %*% (v_ex_return - risk_free_rate))
-TP_weights[TP_weights < 0.02] <- 0
-TP_weights <- TP_weights / sum(TP_weights)
-TP_weights <- as.list(TP_weights[, 1]) %>%
-  unlist()
-
+# TP_weights <- as.vector(ginv(cov_matrix) %*% (v_ex_return - risk_free_rate * one_vector)) / as.numeric(one_vector %*% ginv(cov_matrix) %*% (v_ex_return - risk_free_rate * one_vector))
+TP_weights <- as.vector(as.numeric(ginv(one_vector %*% ginv(cov_matrix) %*% (v_ex_return - risk_free_rate * one_vector))) * ginv(cov_matrix) %*% (v_ex_return - risk_free_rate * one_vector))
+  
 # Calculating the expected return and variance of the TP
 TP_ex_return <- sum(mapply(`*`, TP_weights, ex_return))
 TP_var <- t(TP_weights) %*% cov_matrix %*% TP_weights %>%
@@ -105,15 +99,18 @@ TP_sd <- sqrt(TP_var)
 
 # Creating the Efficient Portfolios (w_1 is the weight of the MVP and w_2 is the weigth of the TP)
 # anden søjle er expected return og tredje søjle er standard deviation
-for (i in 0:10) {
+for (i in -10:10) {
     w_1 <- i / 10
     w_2 <- (1-w_1)
-    EF_matrix[i+1, 1] <- paste(w_1, "+", w_2)
-    EF_matrix[i+1, 2] <- w_1*MVP_ex_return + w_2*TP_ex_return
-    EF_matrix[i+1, 3] <- sqrt(t(w_1*MVP_weights + w_2*TP_weights) %*% cov_matrix %*% (w_1*MVP_weights + w_2*TP_weights) %>%
+    print(w_1)
+    print(w_2)
+    EF_matrix[i+11, 1] <- paste(w_1, "+", w_2)
+    EF_matrix[i+11, 2] <- w_1*MVP_ex_return + w_2*TP_ex_return
+    EF_matrix[i+11, 3] <- sqrt(t(w_1*MVP_weights + w_2*TP_weights) %*% cov_matrix %*% (w_1*MVP_weights + w_2*TP_weights) %>%
       `[`(1, 1) %>% 
       as.numeric())
 }
+
 EF_df <- as.data.frame(EF_matrix) %>%
   rename(weigths = V1, exreturn = V2, sd = V3) %>%
   mutate(exreturn = as.numeric(exreturn),
@@ -128,41 +125,54 @@ ggplot(EF_df, aes(x = sd, y = exreturn)) +
   xlab("Standard Deviation") +
   ylab("Expected Return") +
   annotate("text", x = EF_df$sd[which.min(EF_df$exreturn)], y = EF_df$exreturn[which.min(EF_df$exreturn)], label = "MVP", size = 2, color = "red", vjust = 1.6) +
-  annotate("text", x = EF_df$sd[which.max(EF_df$exreturn)], y = EF_df$exreturn[which.max(EF_df$exreturn)], label = "TP", size = 2, color = "red", vjust = -1) +
+  annotate("text", x = EF_df[11, 3], y = EF_df[11, 2], label = "TP", size = 2, color = "red", vjust = -1) +
   ggtitle("Capital Market Line")
 
 ### 4. Creating the SML #####################################################################
-# 4.1. Now we need to find beta, which means that be have to find the monhthly return of the tangency-portfolio
+# 4.1. We define our market_portfolio (Sparinvest Index)
+market_weights <- list(0.0091, 0.0071, 0.0271, 0.051, 0.0637, 
+                        0.0469, 0.0111, 0.1514, 0.0065, 0.085, 
+                        0.0097, 0.0217, 0.0289, 0.0106, 0.0105, 
+                        0.0113, 0.0059, 0.1662, 0.0355, 0.0622,
+                        0.0298, 0.0124, 0.0078, 0.0261, 0.1025) %>%
+  unlist()
+
+# 4.2. Now we need to find beta, which means that be have to find the monhthly return of the market-portfolio
 for (i in seq_len(nrow(ftdotm_dates) - 1)) {
   total_sum <- 0
   for (j in seq_along(C25_list_data)) {
-    total_sum <- total_sum + (na.omit(C25_list[[j]])[i, 3] * TP_weights[j])
+    total_sum <- total_sum + (na.omit(C25_list[[j]])[i, 3] * market_weights[j])
   }
-  TP_monthly_return[i] <- total_sum
+  market_monthly_return[i] <- total_sum
 }
-
-# 4.2. We now find beta values
+market_ex_return <- sum(mapply(`*`, market_weights, ex_return))
+market_var <- t(market_weights) %*% cov_matrix %*% market_weights %>%
+  `[`(1, 1) %>% 
+  as.numeric()
+market_sd <- sqrt(market_var)
+# 4.3. We now find beta values
 for (i in seq_along(C25_list)) {
-  betas[i] <- cov(na.omit(C25_list[[i]][, 3]), TP_monthly_return) / var(TP_monthly_return)
+  betas[i] <- cov(na.omit(C25_list[[i]][, 3]), market_monthly_return) / var(market_monthly_return)
 }
 
-# 4.3. Plotting the SML model (DE LIGGER PÅ LINJEN VED AT E(R) KOMMER FRA CAPM-FORMLEN)
+# 4.4. Plotting the SML model (DE LIGGER PÅ LINJEN VED AT E[R] KOMMER FRA CAPM-FORMLEN)
 sml_data <- data.frame(betas = unlist(betas), expected_returns = unlist(ex_return))
-sml_data$expected_returns <- risk_free_rate + sml_data$betas * (TP_ex_return - risk_free_rate)
+# CAPM results show what expected value the stocks must have to following the market risk premium
+CAPM_result <- risk_free_rate + sml_data$betas * (market_ex_return - risk_free_rate)
 
 colors <- factor(rainbow(25))
 names(colors) <- C25_names
 ggplot(sml_data, aes(x = betas, y = expected_returns, color = unlist(C25_names), shape = unlist(C25_names))) +
   geom_point() +
-  geom_abline(intercept = risk_free_rate, slope = TP_ex_return - risk_free_rate) +
+  geom_abline(intercept = risk_free_rate, slope = market_ex_return - risk_free_rate) +
   xlab("Beta") + ylab("Expected Return") +
   ggtitle("Security Market Line") +
   scale_color_manual(values = colors) + # use different colors for each asset
   scale_shape_manual(values = rep(c(15, 16, 17, 18, 3), 5)) + # use different shapes for each asset
   guides(color = guide_legend(title = "Assets"), shape = guide_legend(title = "Assets"))
 
-### 4. Creating plotting normal distributions ########################################
-# 4.1 Plotting histogram of returns for AMBU
+### 5. Creating plotting normal distributions ########################################
+# 5.1 Preprocessing of histogram
 # Extracting data for larger period
 C25_list_data_after <- get_data_after()
 
@@ -185,13 +195,7 @@ for (i in seq_along(C25_list_data)) {
     dplyr::mutate(Decimal_return_squared = Decimal_return^2)
 }
 
-ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
-  geom_histogram(aes(y = ..density..), fill = "lightblue", color = "black",) +
-  labs(x = "Expected Value", y = "Density", title = "Distribution of Values")
-
-hist (na.omit(C25_list_after[[1]])$Decimal_return, breaks =25, prob =TRUE , col = "orange", density = 60,
-              xlab ="Expected value ", ylim =c(0, 4) , main = "")
-
+# 5.2 Plotting histogram of returns for AMBU
 # METODE 1
 # h <- hist(na.omit(C25_list_after[[1]])$Decimal_return, breaks=10, col="red", xlab="Expected Value", main="dette er en titel")
 # xfit <- seq(min(na.omit(C25_list_after[[1]])$Decimal_return), max(na.omit(C25_list_after[[1]])$Decimal_return, length=40))
@@ -205,4 +209,33 @@ hist (na.omit(C25_list_after[[1]])$Decimal_return, breaks =25, prob =TRUE , col 
 #   xlab("Expected Value") +
 #   ylab("Frequency") +
   # ggtitle("Histogram of Expected Values")
+
+# METODE 3-4
+# ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
+#   geom_histogram(aes(y = ..density..), fill = "lightblue", color = "black",) +
+#   labs(x = "Expected Value", y = "Density", title = "Distribution of Values")
+# hist (na.omit(C25_list_after[[1]])$Decimal_return, breaks =25, prob =TRUE , col = "orange", density = 60,
+#               xlab ="Expected value ", ylim =c(0, 4) , main = "")
+
+
+
+write.csv(cbind(C25_list[[1]]$Date, round(C25_list[[1]][c("AMBU.B.CO.Close", "Decimal_return", "Decimal_return_squared")], 4)), "AMBU_start_data.csv", row.names = FALSE)
+
+write.csv(cbind(C25_names, ex_return, var_list), "C25_exreturn_variance.csv", row.names = FALSE)
+
+write.csv(as.data.frame(round(cov_matrix[1:5, 1:5], 5)), "cov_variance_matrix.csv", row.names = FALSE)
+
+write.csv(cbind(MVP_weights), "MVP_weights.csv", row.names = FALSE)
+
+write.csv(cbind(TP_weights), "TP_weights.csv", row.names = FALSE)
+
+write.csv(cbind(EF_df$weigths, round(EF_df[c("exreturn", "sd")], 4)), "EF_df.csv", row.names = FALSE)
+
+write.csv(cbind(betas), "beta_values.csv", row.names = FALSE)
+
+
+
+
+
+
 
