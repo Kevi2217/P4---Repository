@@ -26,7 +26,7 @@ get_data_after <- function() {
                          "NDA-DK.CO", "NETC.CO", "NOVO-B.CO", "NZYM-B.CO", "ORSTED.CO",
                          "PNDORA.CO", "RBREW.CO", "ROCK-B.CO", "TRYG.CO", "VWS.CO")
   
-  as.data.frame(getSymbols(paste(C25_list), src = "yahoo", auto.assign = TRUE, from = "2019-01-01", to = "2022-12-05"))
+  as.data.frame(getSymbols(paste(C25_list), src = "yahoo", auto.assign = TRUE, from = "2023-01-01", to = "2023-05-10"))
   
   C25_list_after <- list(`AMBU-B.CO`, `BAVA.CO`, `CHR.CO`, `CARL-B.CO`, `COLO-B.CO`,
                           `DANSKE.CO`, `DEMANT.CO`, `DSV.CO`, `FLS.CO`, `GMAB.CO`,

@@ -226,42 +226,33 @@ sparinvest_weights <- c(0.0091, 0.0071, 0.0271, 0.051, 0.0637,
 TP_actual_return <- sum(mapply(`*`, TP_weights, C25_after_actual_return))
 
 sparinvest_actual_return<- sum(mapply(`*`, sparinvest_weights, C25_after_actual_return))
-sparinvest_actual_var <- t(sparinvest_weights) %*% cov_matrix %*% sparinvest_weights %>%
-  `[`(1, 1) %>% 
-  as.numeric()
-sparinvest_actual_sd <- sqrt(sparinvest_actual_var)
-
-
-
-
-
-
 
 
 
 # 5.2 Plotting histogram of returns for AMBU
-# METODE 1
-# h <- hist(na.omit(C25_list_after[[1]])$Decimal_return, breaks=10, col="red", xlab="Expected Value", main="dette er en titel")
-# xfit <- seq(min(na.omit(C25_list_after[[1]])$Decimal_return), max(na.omit(C25_list_after[[1]])$Decimal_return, length=40))
-# yfit <- dnorm(xfit, mean=mean(na.omit(C25_list_after[[1]])$Decimal_return), sd=sd(na.omit(C25_list_after[[1]])$Decimal_return))
-# yfit <- yfit*diff(h$mids[1:2])*length(na.omit(C25_list_after[[1]])$Decimal_return)
-# lines(xfit, yfit, col="blue", lwd=2)
-
-# METODE 2
-# ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
-#   geom_histogram(bins = 20, fill = "orange", alpha = 0.8) +
-#   xlab("Expected Value") +
-#   ylab("Frequency") +
-  # ggtitle("Histogram of Expected Values")
-
-# METODE 3-4
-# ggplot(na.omit(C25_list_after[[1]]), aes(x = Decimal_return)) +
-#   geom_histogram(aes(y = ..density..), fill = "lightblue", color = "black",) +
-#   labs(x = "Expected Value", y = "Density", title = "Distribution of Values")
-# hist (na.omit(C25_list_after[[1]])$Decimal_return, breaks =25, prob =TRUE , col = "orange", density = 60,
-#               xlab ="Expected value ", ylim =c(0, 4) , main = "")
+# Making of histrogram
+hist_vector <- as.numeric(na.omit(C25_list[[1]])$Decimal_return)
 
 
+
+histogram_main <- hist(hist_vector, breaks = 10, col = "orange",
+density = 99, xlab = "Monthly return ", ylim =c(0, 10) , main = "AMBU", border = "black")
+curve ( dnorm (x , mean = mean(hist_vector) ,sd= sd(hist_vector) ) ,col=" darkblue ", lwd =3,add=TRUE , yaxt ="n")
+
+
+
+corr_matrix <- matrix(nrow = 25, ncol = 25)
+
+# 6 Creating variance-covariance matrix
+# Notice the nested for-loop take the covariance from the covariance matrix
+for (i in seq_along(C25_list)) {
+  for (j in seq_along(C25_list)) {
+    corr_matrix[i, j] <- cov_matrix[i, j] / sqrt(var_list[[i]]*var_list[[j]])
+  }
+}
+
+
+# Saving data and plots
 write.csv(cbind(C25_list[[1]]$Date, round(C25_list[[1]][c("AMBU.B.CO.Adjusted", "Decimal_return", "Decimal_return_squared")], 4)), "AMBU_start_data.csv", row.names = FALSE)
 write.csv(cbind(C25_names, round(as.numeric(ex_return), 4), round(as.numeric(var_list), 4)), "C25_exreturn_variance.csv", row.names = FALSE)
 write.csv(as.data.frame(round(cov_matrix[1:5, 1:5], 5)), "cov_variance_matrix.csv", row.names = FALSE)
@@ -272,10 +263,6 @@ write.csv(cbind(EF_df$weigths, round(EF_df[c("exreturn", "sd")], 4)), "EF_df.csv
 write.csv(cbind(betas), "beta_values.csv", row.names = FALSE)
 ggsave(filename = "CML_model.png", plot = CML, width = 6, height = 4)
 ggsave(filename = "SML_model.png", plot = SML, width = 6, height = 4)
-
-
-
-
 
 
 
