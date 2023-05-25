@@ -112,7 +112,7 @@ CML <- ggplot(EF_df, aes(x = sd, y = exreturn)) +
   geom_abline(slope = ((TP_ex_return - risk_free_rate) / TP_sd), intercept = risk_free_rate, color = "orange") +
   xlim(0, max(EF_df$sd)) +
   ylim(0, max(EF_df$exreturn)) +
-  xlab("Standard Deviation") +
+  xlab("\u03C3") +
   ylab("Expected Return") +
   annotate("text", x = EF_df[21, 3], y = EF_df[21, 2], label = "MVP", size = 2, color = "red", vjust = 1.6) +
   annotate("text", x = EF_df[11, 3], y = EF_df[11, 2], label = "TP", size = 2, color = "red", vjust = -1) +
@@ -193,6 +193,11 @@ SML <- ggplot(sml_data, aes(x = betas, y = expected_returns, color = unlist(C25_
 # 5.1 Preprocessing of histogram
 # Extracting data for larger period
 C25_list_data_after <- get_data_after()
+C25_list_after <- list()
+ex_return_after <- list()
+ex_return_squared_after <- list()
+var_list_after <- list()
+cov_matrix_after <- matrix(nrow = 25, ncol = 25)
 
 # Creating monthly dates
  ftdotm_dates_after <- data.frame(Date = index(C25_list_data_after[[1]]), C25_list_data_after[[1]]) %>%
@@ -202,10 +207,51 @@ C25_list_data_after <- get_data_after()
    dplyr::ungroup() %>%
    dplyr::select(Date)
 
-# Calculating the stocks' actual return in the period after
+#finding C25_list_after like the main
+ for (i in seq_along(C25_list_data_after)) {
+   C25_list_after[[i]] <- data.frame(Date = index(C25_list_data_after[[i]]), C25_list_data_after[[i]]) %>%
+     dplyr::filter(Date %in% ftdotm_dates_after$Date) %>%
+     dplyr::select(Date, 7) %>%
+     dplyr::mutate(Decimal_return = (.[, 2] - lag(.[, 2]))/lag(.[, 2])) %>%
+     dplyr::mutate(Decimal_return_squared = Decimal_return^2)
+   
+   ex_return_after[[i]] <- data.frame(C25_list_after[[i]]) %>%
+     dplyr::mutate(div_ex_return = Decimal_return * (1 / (nrow(ftdotm_dates_after)))) %>%
+     na.omit() %>%
+     dplyr::summarize(ex_return = sum(div_ex_return), na.rm = TRUE) %>%
+     dplyr::pull(ex_return)
+   
+   ex_return_squared_after[[i]] <-  data.frame(C25_list_after[[i]]) %>%
+     dplyr::mutate(div_ex_return = Decimal_return^2 * (1 / (nrow(ftdotm_dates_after)))) %>%
+     na.omit() %>%
+     dplyr::summarize(ex_return = sum(div_ex_return), na.rm = TRUE) %>%
+     dplyr::pull(ex_return)
+   
+   var_list_after[[i]] <- ex_return_squared_after[[i]] - (ex_return_after[[i]]^2)
+ }
+ 
+# Covariance matrix for AFTER
+for (i in seq_along(C25_list_after)) {
+  for (j in seq_along(C25_list_after)) {
+    cov_matrix_after[i, j] <- 1/nrow(ftdotm_dates_after) * sum(na.omit(C25_list_after[[i]])[, 3] * na.omit(C25_list_after[[j]])[, 3]) - ex_return_after[[i]]*ex_return_after[[j]]
+  }
+}
+# Calculating the stocks' actual return in the period after and MAIN
 C25_after_return <- list()
 C25_after_actual_return <- c()
 
+C25_after_return_main <- list()
+C25_after_actual_return_main <- c()
+
+for (i in seq_along(C25_list_data)) {
+  C25_after_return_main[[i]] <- data.frame(Date = index(C25_list_data[[i]]), C25_list_data[[i]]) %>%
+    dplyr::filter(Date %in% ftdotm_dates$Date) %>%
+    dplyr::select(7) %>%
+    slice(c(1, n())) %>%
+    dplyr::transmute(actual_return = (.[, 1] - lag(.[, 1]))/lag(.[, 1]))
+  
+  C25_after_actual_return_main <- c(C25_after_actual_return_main, C25_after_return_main[[i]][2, 1])
+}
 for (i in seq_along(C25_list_data)) {
    C25_after_return[[i]] <- data.frame(Date = index(C25_list_data_after[[i]]), C25_list_data_after[[i]]) %>%
      dplyr::filter(Date %in% ftdotm_dates_after$Date) %>%
@@ -222,11 +268,26 @@ sparinvest_weights <- c(0.0091, 0.0071, 0.0271, 0.051, 0.0637,
                             0.0113, 0.0059, 0.1662, 0.0355, 0.0622,
                             0.0298, 0.0124, 0.0078, 0.0261, 0.1025)
 
-# Calculating the actual return of the TP and sparinvest's C25 index
-TP_actual_return <- sum(mapply(`*`, TP_weights, C25_after_actual_return))
 
-sparinvest_actual_return<- sum(mapply(`*`, sparinvest_weights, C25_after_actual_return))
+# Calculating the actual actual return in the MAIN period
+TP_actual_return_main <- sum(mapply(`*`, TP_weights, C25_after_actual_return_main))
+#Dennes variance, er "TP_var"
 
+sparinvest_actual_return_main <- sum(mapply(`*`, sparinvest_weights, C25_after_actual_return_main))
+sparinvest_actual_var_main <- t(sparinvest_weights) %*% cov_matrix %*% sparinvest_weights %>%
+  `[`(1, 1) %>% 
+  as.numeric()
+
+# Calculating the actual return AFTER of the TP and sparinvest's C25 index
+TP_actual_return_after <- sum(mapply(`*`, TP_weights, C25_after_actual_return))
+TP_var_after <- t(TP_weights) %*% cov_matrix_after %*% TP_weights %>%
+  `[`(1, 1) %>% 
+  as.numeric()
+
+sparinvest_actual_return_after <- sum(mapply(`*`, sparinvest_weights, C25_after_actual_return))
+sparinvest_actual_var_after <- t(sparinvest_weights) %*% cov_matrix_after %*% sparinvest_weights %>%
+  `[`(1, 1) %>% 
+  as.numeric()
 
 
 # 5.2 Plotting histogram of returns for AMBU
@@ -237,7 +298,7 @@ hist_vector <- as.numeric(na.omit(C25_list[[1]])$Decimal_return)
 
 histogram_main <- hist(hist_vector, breaks = 10, col = "orange",
 density = 99, xlab = "Monthly return ", ylim =c(0, 10) , main = "AMBU", border = "black")
-curve ( dnorm (x , mean = mean(hist_vector) ,sd= sd(hist_vector) ) ,col=" darkblue ", lwd =3,add=TRUE , yaxt ="n")
+curve(dnorm (x , mean = mean(hist_vector) ,sd= sd(hist_vector) ) ,col=" darkblue ", lwd =3,add=TRUE , yaxt ="n")
 
 
 
@@ -256,9 +317,9 @@ for (i in seq_along(C25_list)) {
 write.csv(cbind(C25_list[[1]]$Date, round(C25_list[[1]][c("AMBU.B.CO.Adjusted", "Decimal_return", "Decimal_return_squared")], 4)), "AMBU_start_data.csv", row.names = FALSE)
 write.csv(cbind(C25_names, round(as.numeric(ex_return), 4), round(as.numeric(var_list), 4)), "C25_exreturn_variance.csv", row.names = FALSE)
 write.csv(as.data.frame(round(cov_matrix[1:5, 1:5], 5)), "cov_variance_matrix.csv", row.names = FALSE)
-write.csv(cbind(MVP_weights), "MVP_weights.csv", row.names = FALSE)
-write.csv(cbind(TP_weights), "TP_weights.csv", row.names = FALSE)
-write.csv(cbind(market_weights), "market_weights.csv", row.names = FALSE)
+write.csv(cbind(C25_names, MVP_weights), "MVP_weights.csv", row.names = FALSE)
+write.csv(cbind(C25_names, round(cbind(MVP_weights, TP_weights, market_weights, sparinvest_weights), 4)), "all_weights.csv", row.names = FALSE)
+write.csv(cbind(C25_names, market_weights), "market_weights.csv", row.names = FALSE)
 write.csv(cbind(EF_df$weigths, round(EF_df[c("exreturn", "sd")], 4)), "EF_df.csv", row.names = FALSE)
 write.csv(cbind(betas), "beta_values.csv", row.names = FALSE)
 ggsave(filename = "CML_model.png", plot = CML, width = 6, height = 4)
